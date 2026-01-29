@@ -44,12 +44,56 @@ void Ped::Model::setup(std::vector<Ped::Tagent*> agentsInScenario, std::vector<T
 
 void Ped::Model::tick()
 {
-	for (int i = 0; i < agents.size(); i++) {
-		Tagent* agent = agents[i];
-		agent->computeNextDesiredPosition();
+	// Serial 
+	if (this->implementation == Ped::SEQ) {	
+		for (int i = 0; i < agents.size(); i++) {
+			Tagent* agent = agents[i];
+			agent->computeNextDesiredPosition();
 
-		agent->setX(agent->getDesiredX());
-		agent->setY(agent->getDesiredY());
+			agent->setX(agent->getDesiredX());
+			agent->setY(agent->getDesiredY());
+		}
+	}
+	// OpenMP
+	else if (this->implementation == Ped::OMP) {
+		#pragma omp parallel for default(none) shared(agents)
+		for (int i = 0; i < agents.size(); i++) {
+			agents[i]->computeNextDesiredPosition();
+			agents[i]->setX(agent->getDesiredX());
+			agents[i]->setY(agent->getDesiredY());
+		}
+	}
+	// C++ threads
+	else if (this->implementation == Ped::PTHREAD) {
+		int numThreads = std::thread::hardware_concurrency();
+		if (numThreads == 0) numThreads = 2;
+
+		std::vector<std::thread> threads;
+		int n = agents.size();
+		
+		int chunkSize = (n + numThreads - 1) / numThreads;
+
+		for (int t = 0; t < numThreads; t++) {
+			int start = t * chunkSize;
+			
+			if (start >= n) break; 
+			
+			int end = std::min(start + chunkSize, n);
+
+			threads.emplace_back([this, start, end]() {
+				for (int i = start; i < end; i++) {
+					agents[i]->computeNextDesiredPosition();
+					agents[i]->setX(agents[i]->getDesiredX());
+					agents[i]->setY(agents[i]->getDesiredY());
+				}
+			});
+		} 
+		for (auto &th : threads) {
+			if (th.joinable()) {
+				th.join();
+			}
+
+		}
 	}
 }
 
